@@ -51,11 +51,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let productFile = null;
     let artworkFile = null;
     let lastResultBlob = null;
+    let productImgObj = null;
+    let artworkImgObj = null;
+    let currentDrawW = 0;
+    let currentDrawH = 0;
 
     function checkReady() {
         if (productFile && artworkFile) {
             btnAiScanAndScreen.disabled = false;
-            aiScanHint.innerHTML = '<i class="fa-solid fa-circle-check" style="color: #10b981;"></i> พร้อมแล้ว! กดปุ่มเพื่อสแกนขอบและสกรีนลาย';
+            aiScanHint.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles" style="color: #6366f1;"></i> ลายขึ้นบนภาพแล้ว! ปรับขนาดได้ตามต้องการ แล้วกด <strong>"3. สแกนและสกรีนลายลงวัตถุ"</strong>';
         } else if (productFile) {
             btnAiScanAndScreen.disabled = true;
             aiScanHint.innerHTML = '<i class="fa-solid fa-arrow-down" style="color: #f59e0b;"></i> อัปโหลดรูปลายที่จะสกรีนเพิ่มอีก 1 รูป';
@@ -65,43 +69,166 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function previewProductFile(file) {
+    // Function to update the small thumbnail preview inside the upload box
+    function updateDropzoneThumbnail(dropzoneId, dataUrl, fileName, isArtwork = false) {
+        const dropzone = document.getElementById(dropzoneId);
+        if (!dropzone) return;
+        const content = dropzone.querySelector('.mini-upload-content');
+        if (content) {
+            content.innerHTML = `
+                <img src="${dataUrl}" style="width: 44px; height: 44px; object-fit: contain; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); padding: 2px;">
+                <div style="text-align: left; overflow: hidden; flex: 1;">
+                    <div style="font-weight: 600; color: #fff; font-size: 0.85rem; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${fileName}</div>
+                    <div style="font-size: 0.75rem; color: #10b981;"><i class="fa-solid fa-circle-check"></i> อัปโหลดแล้ว (คลิกเปลี่ยนรูป)</div>
+                </div>
+            `;
+        }
+    }
+
+    // Live Preview Renderer: Draws Product and scales Artwork onto it in real time
+    function renderLivePreview() {
+        if (!mockupCanvas) return;
+        const ctx = mockupCanvas.getContext('2d');
+
+        if (!productImgObj && !artworkImgObj) {
+            mockupPlaceholder.style.display = 'block';
+            mockupCanvas.style.display = 'none';
+            mockupResultImg.style.display = 'none';
+            return;
+        }
+
+        mockupPlaceholder.style.display = 'none';
+        mockupResultImg.style.display = 'none';
+        mockupCanvas.style.display = 'block';
+
+        if (productImgObj && !artworkImgObj) {
+            // Only product image loaded
+            mockupCanvas.width = productImgObj.naturalWidth || productImgObj.width;
+            mockupCanvas.height = productImgObj.naturalHeight || productImgObj.height;
+            ctx.clearRect(0, 0, mockupCanvas.width, mockupCanvas.height);
+            ctx.drawImage(productImgObj, 0, 0, mockupCanvas.width, mockupCanvas.height);
+            mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${mockupCanvas.width} x ${mockupCanvas.height} px`;
+            return;
+        }
+
+        if (!productImgObj && artworkImgObj) {
+            // Only artwork loaded
+            const w = Math.max(500, artworkImgObj.naturalWidth);
+            const h = Math.max(500, artworkImgObj.naturalHeight);
+            mockupCanvas.width = w;
+            mockupCanvas.height = h;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, w, h);
+            const dx = (w - artworkImgObj.naturalWidth) / 2;
+            const dy = (h - artworkImgObj.naturalHeight) / 2;
+            ctx.drawImage(artworkImgObj, dx, dy);
+            mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${w} x ${h} px`;
+            return;
+        }
+
+        // Both Product & Artwork loaded: Draw Artwork on Product with live scale
+        const cw = productImgObj.naturalWidth || productImgObj.width;
+        const ch = productImgObj.naturalHeight || productImgObj.height;
+        mockupCanvas.width = cw;
+        mockupCanvas.height = ch;
+
+        // Draw product base
+        ctx.clearRect(0, 0, cw, ch);
+        ctx.drawImage(productImgObj, 0, 0, cw, ch);
+
+        // Draw artwork centered and scaled according to mkScale
+        const scalePercent = parseFloat(mkScale.value) || 85;
+        const baseDim = Math.min(cw, ch);
+        const targetSize = baseDim * 0.80 * (scalePercent / 100.0);
+
+        const artW = artworkImgObj.naturalWidth || artworkImgObj.width;
+        const artH = artworkImgObj.naturalHeight || artworkImgObj.height;
+        const artAspect = artW / Math.max(1, artH);
+
+        let drawW, drawH;
+        if (artAspect >= 1.0) {
+            drawW = Math.round(targetSize);
+            drawH = Math.round(targetSize / artAspect);
+        } else {
+            drawH = Math.round(targetSize);
+            drawW = Math.round(targetSize * artAspect);
+        }
+
+        currentDrawW = drawW;
+        currentDrawH = drawH;
+
+        const cx = cw / 2;
+        const cy = ch / 2;
+        const px = Math.round(cx - (drawW / 2));
+        const py = Math.round(cy - (drawH / 2));
+
+        ctx.save();
+        ctx.drawImage(artworkImgObj, px, py, drawW, drawH);
+        ctx.restore();
+
+        mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${cw} x ${ch} px`;
+    }
+
+    function loadProductFile(file) {
         if (!file) return;
+        productFile = file;
+        productFileName.textContent = file.name;
+        mkProductInfo.innerHTML = `<i class="fa-solid fa-tag"></i> สินค้า: ${file.name}`;
+
         const reader = new FileReader();
-        reader.onload = (re) => {
-            mockupPlaceholder.style.display = 'none';
-            mockupResultImg.style.display = 'block';
-            mockupResultImg.src = re.target.result;
-            const temp = new Image();
-            temp.onload = () => {
-                mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${temp.naturalWidth} x ${temp.naturalHeight} px`;
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            updateDropzoneThumbnail('productDropzone', dataUrl, file.name, false);
+            const img = new Image();
+            img.onload = () => {
+                productImgObj = img;
+                renderLivePreview();
+                checkReady();
             };
-            temp.src = re.target.result;
+            img.src = dataUrl;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function loadArtworkFile(file) {
+        if (!file) return;
+        artworkFile = file;
+        artworkFileName.textContent = file.name;
+        mkDesignInfo.innerHTML = `<i class="fa-solid fa-palette"></i> ลาย: ${file.name}`;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            updateDropzoneThumbnail('artworkDropzone', dataUrl, file.name, true);
+            const img = new Image();
+            img.onload = () => {
+                artworkImgObj = img;
+                renderLivePreview();
+                checkReady();
+            };
+            img.src = dataUrl;
         };
         reader.readAsDataURL(file);
     }
 
     mockupProductInput.addEventListener('change', (e) => {
         if (e.target.files && e.target.files[0]) {
-            productFile = e.target.files[0];
-            productFileName.textContent = productFile.name;
-            mkProductInfo.innerHTML = `<i class="fa-solid fa-tag"></i> สินค้า: ${productFile.name}`;
-            previewProductFile(productFile);
-            checkReady();
+            loadProductFile(e.target.files[0]);
         }
     });
 
     mockupArtworkInput.addEventListener('change', (e) => {
         if (e.target.files && e.target.files[0]) {
-            artworkFile = e.target.files[0];
-            artworkFileName.textContent = artworkFile.name;
-            mkDesignInfo.innerHTML = `<i class="fa-solid fa-palette"></i> ลาย: ${artworkFile.name}`;
-            checkReady();
+            loadArtworkFile(e.target.files[0]);
         }
     });
 
     mkScale.addEventListener('input', (e) => {
         mkScaleVal.textContent = `${e.target.value}%`;
+        if (productImgObj && artworkImgObj) {
+            renderLivePreview();
+        }
     });
 
     // Core Action: Scan & Screen with strict boundary clipping
@@ -118,6 +245,10 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('product', productFile);
         formData.append('artwork', artworkFile);
         formData.append('scale', mkScale.value);
+        if (currentDrawW && currentDrawH) {
+            formData.append('draw_w', currentDrawW);
+            formData.append('draw_h', currentDrawH);
+        }
 
         try {
             const res = await fetch('/api/scan-and-screen', {
@@ -135,13 +266,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const resultUrl = URL.createObjectURL(blob);
 
             mockupPlaceholder.style.display = 'none';
+            mockupCanvas.style.display = 'none';
             mockupResultImg.style.display = 'block';
             mockupResultImg.src = resultUrl;
 
             // Read image dimensions
             const temp = new Image();
             temp.onload = () => {
-                mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${temp.naturalWidth} x ${temp.naturalHeight} px`;
+                mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${temp.naturalWidth} x ${temp.naturalHeight} px (AI Clipped)`;
             };
             temp.src = resultUrl;
 
@@ -209,16 +341,14 @@ document.addEventListener('DOMContentLoaded', () => {
     productDropzone.addEventListener('drop', (e) => {
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
-            mockupProductInput.files = files;
-            mockupProductInput.dispatchEvent(new Event('change'));
+            loadProductFile(files[0]);
         }
     });
 
     artworkDropzone.addEventListener('drop', (e) => {
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
-            mockupArtworkInput.files = files;
-            mockupArtworkInput.dispatchEvent(new Event('change'));
+            loadArtworkFile(files[0]);
         }
     });
 
@@ -231,17 +361,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const activeTab = document.querySelector('.nav-tab-btn.active').dataset.tab;
                 if (activeTab === 'tab-mockup') {
                     if (!productFile) {
-                        productFile = blob;
-                        productFileName.textContent = 'รูปสินค้าจากคลิปบอร์ด';
-                        mkProductInfo.innerHTML = `<i class="fa-solid fa-tag"></i> สินค้า: รูปจากคลิปบอร์ด`;
-                        previewProductFile(productFile);
-                        checkReady();
+                        loadProductFile(blob);
                         showToast('วางรูปสินค้าจากคลิปบอร์ดแล้ว', 'success');
                     } else {
-                        artworkFile = blob;
-                        artworkFileName.textContent = 'รูปลายจากคลิปบอร์ด';
-                        mkDesignInfo.innerHTML = `<i class="fa-solid fa-palette"></i> ลาย: รูปจากคลิปบอร์ด`;
-                        checkReady();
+                        loadArtworkFile(blob);
                         showToast('วางรูปลายจากคลิปบอร์ดแล้ว', 'success');
                     }
                 } else {

@@ -347,19 +347,28 @@ def api_scan_and_screen():
             cx, cy = w // 2, h // 2
             obj_w, obj_h = int(w * 0.8), int(h * 0.8)
 
-        # 2. Size artwork according to user's scale slider (relative to object size)
-        target_size = int(max(obj_w, obj_h) * (scale_percent / 100.0))
-        target_size = max(20, target_size)
+        # 2. Size artwork: Use exact draw_w / draw_h from user's live preview (prevents any auto-shrinking!)
+        client_draw_w = request.form.get("draw_w")
+        client_draw_h = request.form.get("draw_h")
 
         art_w, art_h = artwork_img.size
         art_aspect = art_w / float(max(1, art_h))
 
-        if art_aspect >= 1.0:
-            draw_w = target_size
-            draw_h = int(target_size / art_aspect)
+        if client_draw_w and client_draw_h:
+            draw_w = max(10, int(float(client_draw_w)))
+            draw_h = max(10, int(float(client_draw_h)))
+            target_size = max(draw_w, draw_h)
+            logger.info(f"Using exact preview dimensions: {draw_w}x{draw_h}")
         else:
-            draw_h = target_size
-            draw_w = int(target_size * art_aspect)
+            base_dim = min(w, h)
+            target_size = max(20, int(base_dim * 0.80 * (scale_percent / 100.0)))
+            if art_aspect >= 1.0:
+                draw_w = target_size
+                draw_h = int(target_size / art_aspect)
+            else:
+                draw_h = target_size
+                draw_w = int(target_size * art_aspect)
+            logger.info(f"Calculated fallback dimensions: {draw_w}x{draw_h}")
 
         # Resize artwork smoothly
         art_resized = artwork_img.resize((draw_w, draw_h), Image.Resampling.LANCZOS)
