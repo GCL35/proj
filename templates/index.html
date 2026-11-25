@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RMBG AI & Product Mockup Studio - สกรีนภาพลงจาน/แก้ว & ลบพื้นหลัง</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation / Header -->
+        <header class="app-header">
+            <div class="logo-group">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-plate-wheat"></i>
+                </div>
+                <div>
+                    <h1>RMBG & Mockup Studio <span class="badge">Pro Edition</span></h1>
+                    <p class="subtitle">สกรีนลายลงจาน/แก้วรักษามิติแสงเงาครบ 100% & ลบพื้นหลัง AI</p>
+                </div>
+            </div>
+
+            <!-- Tab Switcher in Header -->
+            <nav class="app-nav-tabs">
+                <button type="button" class="nav-tab-btn active" data-tab="tab-mockup">
+                    <i class="fa-solid fa-stamp"></i> สกรีนลายลงจาน/แก้ว (Mockup Studio)
+                </button>
+                <button type="button" class="nav-tab-btn" data-tab="tab-rmbg">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> ลบพื้นหลัง AI (RMBG)
+                </button>
+            </nav>
+
+            <div class="header-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Server Online</span>
+            </div>
+        </header>
+
+        <!-- ======================================================== -->
+        <!-- TAB 1: PRODUCT MOCKUP STUDIO (สกรีนภาพลงจาน/แก้ว) -->
+        <!-- ======================================================== -->
+        <main class="main-content tab-content-view active" id="tab-mockup">
+            <!-- Sidebar: Mockup Controls -->
+            <aside class="control-panel">
+                <!-- Step 1: Uploads -->
+                <div class="panel-card">
+                    <h2 class="card-title"><i class="fa-solid fa-cloud-arrow-up"></i> 1. อัปโหลดรูปภาพ</h2>
+
+                    <!-- Upload Base Product (Plate/Mug) -->
+                    <div class="form-group">
+                        <label for="mockupProductInput"><i class="fa-solid fa-circle-dot"></i> รูปสินค้า (จาน หรือ แก้ว):</label>
+                        <div class="mini-upload-box" id="productDropzone">
+                            <input type="file" id="mockupProductInput" accept="image/*" style="display: none;">
+                            <div class="mini-upload-content" onclick="document.getElementById('mockupProductInput').click()">
+                                <i class="fa-solid fa-image"></i>
+                                <span id="productFileName">คลิกเลือกรูปจาน/แก้ว หรือลากไฟล์มาวาง</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upload Artwork to screen -->
+                    <div class="form-group mt-3">
+                        <label for="mockupArtworkInput"><i class="fa-solid fa-palette"></i> รูปลายที่จะสกรีนลงบนสินค้า:</label>
+                        <div class="mini-upload-box artwork-box" id="artworkDropzone">
+                            <input type="file" id="mockupArtworkInput" accept="image/*" style="display: none;">
+                            <div class="mini-upload-content" onclick="document.getElementById('mockupArtworkInput').click()">
+                                <i class="fa-solid fa-brush"></i>
+                                <span id="artworkFileName">คลิกเลือกรูปลาย โลโก้ หรือรูปถ่าย</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Size & Scan -->
+                <div class="panel-card">
+                    <h2 class="card-title"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> 2. ปรับขนาดของลาย</h2>
+
+                    <!-- Size / Scale Slider Only -->
+                    <div class="slider-control-group">
+                        <div class="slider-header">
+                            <span>ขนาดลาย (ใหญ่ / เล็ก):</span>
+                            <span id="mkScaleVal">85%</span>
+                        </div>
+                        <input type="range" id="mkScale" min="30" max="150" value="85" class="custom-range">
+                    </div>
+                    <small class="hint-text mt-2" style="display: block; color: var(--text-muted);"><i class="fa-solid fa-shield-halved" style="color: #10b981;"></i> ระบบ AI จะตัดขอบให้อยู่เฉพาะบนตัวจาน/แก้ว <strong>ไม่ล้นเกินขอบวัตถุแน่นอน</strong></small>
+
+                    <!-- Big Action Button: Scan and Screen -->
+                    <div class="form-group mt-3">
+                        <button type="button" id="btnAiScanAndScreen" class="btn btn-primary btn-block" disabled>
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> 3. สแกนและสกรีนลายลงวัตถุ
+                        </button>
+                        <small class="hint-text text-center mt-2" id="aiScanHint" style="display: block; text-align: center;">กรุณาอัปโหลดรูปจาน/แก้ว และรูปลายเพื่อสแกน</small>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Center/Right: Result Workspace -->
+            <section class="workspace-area">
+                <div class="result-container" style="display: flex;">
+                    <!-- Toolbar -->
+                    <div class="result-toolbar">
+                        <div class="toolbar-title-wrap">
+                            <h3><i class="fa-solid fa-eye"></i> ภาพผลลัพธ์การสกรีนลงสินค้า</h3>
+                            <span class="interactive-hint"><i class="fa-solid fa-circle-check" style="color: #10b981;"></i> ลายถูกตัดขอบตามรูปทรงจาน/แก้ว ไม่เกินขอบวัตถุ พร้อมแสงเงาสมจริง</span>
+                        </div>
+                        <div class="toolbar-actions">
+                            <button id="mkDownloadBtn" class="btn btn-success btn-sm" disabled>
+                                <i class="fa-solid fa-download"></i> ดาวน์โหลด PNG คมชัดสูง
+                            </button>
+                            <button id="mkCopyBtn" class="btn btn-secondary btn-sm" disabled>
+                                <i class="fa-solid fa-copy"></i> คัดลอกภาพ
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mockup Canvas Wrapper -->
+                    <div class="canvas-wrapper mockup-canvas-container" id="mockupCanvasWrapper">
+                        <img id="mockupResultImg" alt="ผลลัพธ์งานสกรีน" style="display: none; max-width: 100%; max-height: 580px; object-fit: contain; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);">
+                        <canvas id="mockupCanvas" style="display: none;"></canvas>
+                        
+                        <div id="mockupPlaceholder" class="mockup-empty-placeholder">
+                            <div class="empty-icon"><i class="fa-solid fa-plate-wheat"></i></div>
+                            <h3>รอการอัปโหลดรูปจาน/แก้ว และรูปลาย</h3>
+                            <p>1. อัปโหลดรูปจานหรือแก้วของคุณทางด้านซ้าย<br>2. อัปโหลดรูปลายที่ต้องการสกรีน<br>3. ปรับขนาดลาย (ใหญ่/เล็ก) แล้วกด <strong>"สแกนและสกรีนลายลงวัตถุ"</strong></p>
+                        </div>
+
+                        <div id="mockupLoadingOverlay" class="loading-overlay" style="display: none;">
+                            <div class="spinner-box">
+                                <div class="spinner"></div>
+                                <h4 id="mkLoadingTitle">AI (RMBG) กำลังสแกนขอบวัตถุ...</h4>
+                                <p class="loading-subtext">ระบบกำลังตัดขอบลายให้อยู่บนเนื้อจาน/แก้ว พร้อมรักษามิติแสงเงาครบ 100%</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mockup Info Bar -->
+                    <div class="image-info-bar">
+                        <span id="mkProductInfo"><i class="fa-solid fa-tag"></i> สินค้า: รออัปโหลด</span>
+                        <span id="mkDesignInfo"><i class="fa-solid fa-palette"></i> ลาย: รออัปโหลด</span>
+                        <span id="mkCanvasDimensions"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> -</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+
+        <!-- ======================================================== -->
+        <!-- TAB 2: RMBG AI BACKGROUND REMOVAL (ลบพื้นหลัง) -->
+        <!-- ======================================================== -->
+        <main class="main-content tab-content-view" id="tab-rmbg" style="display: none;">
+            <!-- Sidebar: Controls & Options -->
+            <aside class="control-panel">
+                <div class="panel-card">
+                    <h2 class="card-title"><i class="fa-solid fa-sliders"></i> ตั้งค่าการลบพื้นหลัง</h2>
+
+                    <!-- Model Selection -->
+                    <div class="form-group">
+                        <label for="modelSelect"><i class="fa-solid fa-brain"></i> เลือกโมเดล AI:</label>
+                        <select id="modelSelect" class="form-select">
+                            <option value="bria-rmbg" selected>BRIA RMBG (แนะนำ - คุณภาพสูงสุด)</option>
+                            <option value="u2net">U2Net (โมเดลมาตรฐาน)</option>
+                            <option value="isnet-general-use">IS-Net (เก็บขอบรายละเอียดสูง)</option>
+                            <option value="silueta">Silueta (ความเร็วสูง ประหยัดทรัพยากร)</option>
+                        </select>
+                        <small class="hint-text" id="modelHint">โมเดล RMBG ตัดขอบคมชัด เหมาะสำหรับคนและสินค้า</small>
+                    </div>
+
+                    <!-- Alpha Matting Toggle -->
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="alphaMattingToggle">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text"><i class="fa-solid fa-feather-pointed"></i> Alpha Matting (ละเอียดพิเศษ)</span>
+                        </label>
+                        <small class="hint-text">ช่วยเก็บไรผม ขนสัตว์ และขอบโปร่งแสงได้เนียนขึ้น</small>
+                    </div>
+
+                    <!-- Background Options -->
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-palette"></i> พื้นหลังใหม่:</label>
+                        <div class="bg-mode-selector">
+                            <button type="button" class="mode-btn active" data-mode="transparent">
+                                <i class="fa-solid fa-border-none"></i> โปร่งใส
+                            </button>
+                            <button type="button" class="mode-btn" data-mode="shape">
+                                <i class="fa-solid fa-circle"></i> วงกลม
+                            </button>
+                            <button type="button" class="mode-btn" data-mode="color">
+                                <i class="fa-solid fa-fill-drip"></i> สีพื้น
+                            </button>
+                            <button type="button" class="mode-btn" data-mode="image">
+                                <i class="fa-solid fa-image"></i> รูปภาพ
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Shape Options Box -->
+                    <div class="form-group" id="shapeOptionsBox" style="display: none;">
+                        <label><i class="fa-solid fa-shapes"></i> กำหนดวงกลม / รูปทรง:</label>
+                        <div class="shape-color-presets">
+                            <button type="button" class="shape-color-chip active" style="background: #e11d48;" data-color="#e11d48" title="แดงสดใส (แนะนำ)"></button>
+                            <button type="button" class="shape-color-chip" style="background: #dc2626;" data-color="#dc2626" title="แดงเข้ม"></button>
+                            <button type="button" class="shape-color-chip" style="background: #ffffff;" data-color="#ffffff" title="ขาว"></button>
+                            <button type="button" class="shape-color-chip" style="background: #0f172a;" data-color="#0f172a" title="ดำกราไฟต์"></button>
+                            <button type="button" class="shape-color-chip" style="background: #3b82f6;" data-color="#3b82f6" title="น้ำเงิน"></button>
+                            <button type="button" class="shape-color-chip" style="background: #f59e0b;" data-color="#f59e0b" title="ส้มทอง"></button>
+                            <div class="custom-color-wrapper">
+                                <input type="color" id="shapeCustomColor" value="#e11d48">
+                                <span class="custom-color-label">สีอื่น</span>
+                            </div>
+                        </div>
+
+                        <div class="slider-control-group mt-2">
+                            <div class="slider-header">
+                                <span>ขนาดวงกลม:</span>
+                                <span id="shapeScaleVal">85%</span>
+                            </div>
+                            <input type="range" id="shapeScale" min="50" max="150" value="85" class="custom-range">
+                        </div>
+
+                        <div class="slider-control-group mt-2">
+                            <div class="slider-header">
+                                <span>ตำแหน่งแนวตั้ง (Y):</span>
+                                <span id="shapeOffsetYVal">0px</span>
+                            </div>
+                            <input type="range" id="shapeOffsetY" min="-100" max="100" value="0" class="custom-range">
+                        </div>
+                    </div>
+
+                    <!-- Color Picker Box -->
+                    <div class="form-group" id="colorPickerBox" style="display: none;">
+                        <label>เลือกโทนสี:</label>
+                        <div class="color-presets">
+                            <button type="button" class="color-chip" style="background: #ffffff;" data-color="#ffffff" title="ขาว"></button>
+                            <button type="button" class="color-chip" style="background: #000000;" data-color="#000000" title="ดำ"></button>
+                            <button type="button" class="color-chip" style="background: #00b140;" data-color="#00b140" title="เขียว Chroma Key"></button>
+                            <button type="button" class="color-chip" style="background: #1877f2;" data-color="#1877f2" title="น้ำเงิน Studio"></button>
+                            <button type="button" class="color-chip" style="background: #ff4757;" data-color="#ff4757" title="แดง"></button>
+                            <button type="button" class="color-chip" style="background: #ffa502;" data-color="#ffa502" title="ส้ม"></button>
+                            <div class="custom-color-wrapper">
+                                <input type="color" id="customColorInput" value="#ffffff">
+                                <span class="custom-color-label"><i class="fa-solid fa-eye-dropper"></i> กำหนดเอง</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Background Image Upload -->
+                    <div class="form-group" id="bgImageBox" style="display: none;">
+                        <label for="bgImageInput">เลือกภาพพื้นหลังใหม่:</label>
+                        <input type="file" id="bgImageInput" accept="image/*" class="file-input-compact">
+                    </div>
+
+                    <!-- Quick Process Button -->
+                    <button id="processBtn" class="btn btn-primary btn-block" disabled>
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> เริ่มประมวลผลลบพื้นหลัง
+                    </button>
+                </div>
+
+                <!-- Shadow & Depth Control Card -->
+                <div class="panel-card shadow-control-card">
+                    <div class="card-header-toggle">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="shadowToggle" checked>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text"><i class="fa-solid fa-cloud-moon"></i> ใส่เงาสมจริง (Shadow)</span>
+                        </label>
+                    </div>
+
+                    <div id="shadowControlsWrapper" class="shadow-controls-body">
+                        <div class="form-group mt-2">
+                            <label><i class="fa-solid fa-layer-group"></i> ประเภทของเงา:</label>
+                            <select id="shadowTypeSelect" class="form-select">
+                                <option value="floor" selected>เงาตกกระทบพื้น 3D (Floor Cast - แนะนำสำหรับจาน/สินค้า)</option>
+                                <option value="drop">เงานุ่มลอยตัว (Soft Drop Shadow)</option>
+                                <option value="original">ดึงเงาเดิมจากภาพจริง (Original Shadow)</option>
+                            </select>
+                        </div>
+
+                        <div class="slider-control-group">
+                            <div class="slider-header">
+                                <span>ความเข้มของเงา (Opacity):</span>
+                                <span id="shadowOpacityVal">55%</span>
+                            </div>
+                            <input type="range" id="shadowOpacity" min="0" max="100" value="55" class="custom-range">
+                        </div>
+
+                        <div class="slider-control-group mt-2">
+                            <div class="slider-header">
+                                <span>ความฟุ้งนุ่ม (Blur):</span>
+                                <span id="shadowBlurVal">24px</span>
+                            </div>
+                            <input type="range" id="shadowBlur" min="0" max="60" value="24" class="custom-range">
+                        </div>
+
+                        <div class="slider-control-group mt-2">
+                            <div class="slider-header">
+                                <span>ระยะตกกระทบ (Distance Y):</span>
+                                <span id="shadowOffsetYVal">18px</span>
+                            </div>
+                            <input type="range" id="shadowOffsetY" min="-30" max="60" value="18" class="custom-range">
+                        </div>
+
+                        <div class="quick-preset-box mt-3">
+                            <button type="button" id="redCirclePresetBtn" class="btn btn-outline btn-block btn-sm">
+                                <i class="fa-solid fa-bullseye" style="color: #ef4444;"></i> คลิกเดียว: ใส่ในวงกลมสีแดง + เงาครบ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tips Card -->
+                <div class="panel-card info-card">
+                    <h3><i class="fa-solid fa-lightbulb"></i> เคล็ดลับ</h3>
+                    <ul>
+                        <li>สามารถกด <strong>Ctrl + V</strong> เพื่อวางรูปจากคลิปบอร์ดได้ทันที</li>
+                        <li>รองรับไฟล์ JPG, PNG, WEBP, BMP</li>
+                        <li>ไฟล์ภาพผลลัพธ์จะถูกบันทึกเป็น PNG แบบไม่สูญเสียความละเอียด</li>
+                    </ul>
+                </div>
+            </aside>
+
+            <!-- Center/Right: Upload & Preview Area -->
+            <section class="workspace-area">
+                <!-- Dropzone (shown when no image selected) -->
+                <div class="dropzone" id="dropzone">
+                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    <div class="dropzone-content">
+                        <div class="upload-icon-wrapper">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                        </div>
+                        <h3>ลากรูปภาพมาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</h3>
+                        <p>รองรับ JPG, PNG, WEBP หรือกด <kbd>Ctrl + V</kbd> เพื่อวางรูปจากคลิปบอร์ด</p>
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
+                            <i class="fa-solid fa-folder-open"></i> เลือกไฟล์รูปภาพ
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview & Result Section -->
+                <div class="result-container" id="resultContainer" style="display: none;">
+                    <div class="result-toolbar">
+                        <div class="view-switch">
+                            <button id="splitViewBtn" class="view-btn active" title="เปรียบเทียบแบบสไลด์">
+                                <i class="fa-solid fa-arrows-split-up-and-left"></i> สไลด์เปรียบเทียบ
+                            </button>
+                            <button id="sideBySideBtn" class="view-btn" title="เปรียบเทียบข้างกัน">
+                                <i class="fa-solid fa-table-columns"></i> วางคู่กัน
+                            </button>
+                        </div>
+                        <div class="toolbar-actions">
+                            <button id="copyBtn" class="btn btn-secondary btn-sm" disabled>
+                                <i class="fa-solid fa-copy"></i> คัดลอกภาพ
+                            </button>
+                            <button id="downloadBtn" class="btn btn-success btn-sm" disabled>
+                                <i class="fa-solid fa-download"></i> ดาวน์โหลด PNG
+                            </button>
+                            <button id="resetBtn" class="btn btn-outline btn-sm">
+                                <i class="fa-solid fa-rotate-left"></i> เลือกรูปใหม่
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="canvas-wrapper">
+                        <div class="split-slider-wrapper" id="splitSliderWrapper">
+                            <div class="img-wrapper background-layer" id="resultLayer">
+                                <img id="resultImg" alt="ผลลัพธ์หลังลบพื้นหลัง">
+                            </div>
+                            <div class="img-wrapper foreground-layer" id="originalLayer">
+                                <img id="originalImg" alt="รูปภาพต้นฉบับ">
+                            </div>
+                            <input type="range" min="0" max="100" value="50" class="slider" id="compareSlider">
+                            <div class="slider-divider" id="sliderDivider">
+                                <div class="slider-handle"><i class="fa-solid fa-arrows-left-right"></i></div>
+                            </div>
+                        </div>
+
+                        <div class="side-by-side-wrapper" id="sideBySideWrapper" style="display: none;">
+                            <div class="side-box">
+                                <div class="side-header">ต้นฉบับ</div>
+                                <div class="side-img-wrap">
+                                    <img id="sideOriginalImg" alt="ต้นฉบับ">
+                                </div>
+                            </div>
+                            <div class="side-box">
+                                <div class="side-header">ลบพื้นหลังแล้ว</div>
+                                <div class="side-img-wrap result-checker">
+                                    <img id="sideResultImg" alt="ผลลัพธ์">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+                            <div class="spinner-box">
+                                <div class="spinner"></div>
+                                <h4 id="loadingText">กำลังประมวลผลด้วยโมเดล RMBG...</h4>
+                                <p class="loading-subtext">ระบบจะประมวลผลความละเอียดสูง</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="image-info-bar">
+                        <span id="fileInfo"><i class="fa-regular fa-file-image"></i> ไม่มีรูปภาพ</span>
+                        <span id="dimensionInfo"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> -</span>
+                        <span id="processTimeInfo"><i class="fa-solid fa-bolt"></i> -</span>
+                    </div>
+                </div>
+
+                <!-- Recent Gallery History -->
+                <div class="history-section" id="historySection">
+                    <h3><i class="fa-solid fa-clock-rotate-left"></i> ประวัติรูปภาพที่ประมวลผลล่าสุด</h3>
+                    <div class="history-grid" id="historyGrid">
+                        <div class="history-empty">ยังไม่มีประวัติรูปภาพ</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>RMBG & Mockup Studio &bull; สกรีนลายลงสินค้าพร้อมระบบแสงเงาสมจริง &bull; ขับเคลื่อนด้วย Python & HTML5 Canvas</p>
+        </footer>
+    </div>
+
+    <!-- Toast Notification Component -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
