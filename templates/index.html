@@ -80,7 +80,41 @@
 
                 <!-- Step 2: Size & Scan -->
                 <div class="panel-card">
-                    <h2 class="card-title"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> 2. ปรับขนาดของลาย</h2>
+                    <h2 class="card-title"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> 2. ปรับขนาดและตำแหน่ง</h2>
+
+                    <!-- Shape / Surface Type Selector -->
+                    <div class="form-group mb-3">
+                        <label style="font-size: 0.82rem; font-weight: 500; color: #cbd5e1; margin-bottom: 6px; display: block;">
+                            <i class="fa-solid fa-shapes" style="color: #6366f1;"></i> รูปทรงสินค้า (พื้นผิว):
+                        </label>
+                        <div class="mockup-shape-selector" style="display: flex; background: rgba(0,0,0,0.25); padding: 3px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); gap: 4px;">
+                            <button type="button" class="mockup-shape-btn active" id="btnShapePlate" data-shape="plate">
+                                <i class="fa-solid fa-plate-wheat"></i> จาน/ชาม (ทรงแบน)
+                            </button>
+                            <button type="button" class="mockup-shape-btn" id="btnShapeCylinder" data-shape="cylinder">
+                                <i class="fa-solid fa-mug-hot"></i> แก้วน้ำ (โค้ง 3D)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 3D Cylinder Curvature Control Group -->
+                    <div class="slider-control-group mb-3" id="curvatureControlGroup" style="display: none; background: rgba(99, 102, 241, 0.08); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(99, 102, 241, 0.2);">
+                        <div class="slider-header" style="margin-bottom: 4px;">
+                            <span style="font-size: 0.82rem; font-weight: 500; color: #cbd5e1;">
+                                <i class="fa-solid fa-bezier-curve" style="color: #38bdf8;"></i> ระดับความโค้ง 3D:
+                            </span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span id="mkCurvatureVal" style="color: #38bdf8; font-weight: 600; font-size: 0.82rem;">60% (สมจริง)</span>
+                                <button type="button" id="btnResetCurvature" class="btn btn-outline-secondary btn-xs" style="padding: 1px 6px; font-size: 0.7rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" title="รีเซ็ตความโค้งตามขนาดลายอัตโนมัติ">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> อัตโนมัติ
+                                </button>
+                            </div>
+                        </div>
+                        <input type="range" id="mkCurvature" min="15" max="150" value="60" class="custom-range">
+                        <small class="hint-text" style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px;">
+                            <i class="fa-solid fa-circle-info" style="color: #38bdf8;"></i> ปรับความโค้งโอบรอบแก้วให้พอดีกับมุมกล้องของรูปถ่ายแก้วจริง
+                        </small>
+                    </div>
 
                     <!-- Size / Scale Slider Only -->
                     <div class="slider-control-group">
@@ -90,6 +124,20 @@
                         </div>
                         <input type="range" id="mkScale" min="20" max="250" value="85" class="custom-range">
                     </div>
+
+                    <!-- Position controls & Interactive Drag Hint -->
+                    <div class="position-control-box mt-3" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-size: 0.82rem; font-weight: 500; color: #cbd5e1;"><i class="fa-solid fa-arrows-up-down-left-right" style="color: #6366f1;"></i> ตำแหน่งลาย:</span>
+                            <button type="button" id="mkResetPosBtn" class="btn btn-outline-secondary btn-xs" style="padding: 2px 8px; font-size: 0.75rem;" title="รีเซ็ตตำแหน่งกลับสู่กึ่งกลาง">
+                                <i class="fa-solid fa-crosshairs"></i> จัดกึ่งกลาง
+                            </button>
+                        </div>
+                        <small class="hint-text" style="display: block; font-size: 0.75rem; color: var(--text-muted); line-height: 1.4;">
+                            <i class="fa-solid fa-hand-pointer" style="color: #38bdf8;"></i> <strong>คลิกและลากที่รูปภาพในหน้าพรีวิว</strong> เพื่อเลื่อนขยับตำแหน่งลายได้อิสระ
+                        </small>
+                    </div>
+
                     <small class="hint-text mt-2" style="display: block; color: var(--text-muted);"><i class="fa-solid fa-shield-halved" style="color: #10b981;"></i> ระบบ AI จะตัดขอบให้อยู่เฉพาะบนตัวจาน/แก้ว <strong>ไม่ล้นเกินขอบวัตถุแน่นอน</strong></small>
 
                     <!-- Big Action Button: Scan and Screen -->
@@ -109,9 +157,12 @@
                     <div class="result-toolbar">
                         <div class="toolbar-title-wrap">
                             <h3><i class="fa-solid fa-eye"></i> ภาพผลลัพธ์การสกรีนลงสินค้า</h3>
-                            <span class="interactive-hint"><i class="fa-solid fa-circle-check" style="color: #10b981;"></i> ลายถูกตัดขอบตามรูปทรงจาน/แก้ว ไม่เกินขอบวัตถุ พร้อมแสงเงาสมจริง</span>
+                            <span class="interactive-hint"><i class="fa-solid fa-arrows-up-down-left-right" style="color: #6366f1;"></i> คลิกลากบนภาพเพื่อขยับตำแหน่งลายได้อิสระ | ตัดขอบ AI อัตโนมัติ</span>
                         </div>
                         <div class="toolbar-actions">
+                            <button type="button" id="mkResetPosToolbarBtn" class="btn btn-secondary btn-sm" title="ย้ายลายกลับมากึ่งกลาง">
+                                <i class="fa-solid fa-crosshairs"></i> จัดกึ่งกลาง
+                            </button>
                             <button id="mkDownloadBtn" class="btn btn-success btn-sm" disabled>
                                 <i class="fa-solid fa-download"></i> ดาวน์โหลด PNG คมชัดสูง
                             </button>
@@ -123,7 +174,7 @@
 
                     <!-- Mockup Canvas Wrapper -->
                     <div class="canvas-wrapper mockup-canvas-container" id="mockupCanvasWrapper">
-                        <img id="mockupResultImg" alt="ผลลัพธ์งานสกรีน" style="display: none; max-width: 100%; max-height: 580px; object-fit: contain; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);">
+                        <img id="mockupResultImg" alt="ผลลัพธ์งานสกรีน" style="display: none;">
                         <canvas id="mockupCanvas" style="display: none;"></canvas>
                         
                         <div id="mockupPlaceholder" class="mockup-empty-placeholder">

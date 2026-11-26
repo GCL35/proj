@@ -9,6 +9,7 @@ import sys
 import logging
 from typing import Dict, Any
 import numpy as np
+import scipy.ndimage as ndi
 from flask import Flask, request, jsonify, send_file, render_template, Response
 from flask_cors import CORS
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageOps, ImageChops
@@ -300,6 +301,53 @@ def api_detect_boundary():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def warp_cylinder_advanced(art_resized: Image.Image, phi_max: float = 1.05, arch: float = 16.0) -> tuple[Image.Image, int, int]:
+    """
+    Photorealistic 3D cylindrical mug projection:
+    - True cylinder cosine projection (dx/dphi = cos(phi), natural edge foreshortening)
+    - True elliptical rim perspective: both top and bottom edges curve harmoniously (smile curve)
+    - Soft diffuse lighting falloff as surface turns away
+    """
+    target_w, target_h = art_resized.size
+    art_arr = np.array(art_resized, dtype=np.float32)
+
+    pad_y = int(arch) + 8
+    pad_x = 4
+    cw = target_w + pad_x * 2
+    ch = target_h + pad_y * 2
+
+    y_dest, x_dest = np.indices((ch, cw), dtype=np.float32)
+    xc = (cw - 1) / 2.0
+
+    x_rel = (x_dest - xc) / (target_w / 2.0)
+    x_rel_clipped = np.clip(x_rel, -0.999, 0.999)
+
+    sin_max = float(np.sin(phi_max))
+    cos_max = float(np.cos(phi_max))
+
+    phi = np.arcsin(x_rel_clipped * sin_max)
+
+    # Texture coordinates in [0, target_w-1] and [0, target_h-1]
+    u_tex = (0.5 + phi / (2.0 * phi_max)) * (target_w - 1)
+
+    # True elliptical delta y: center drops by arch, sides are at baseline 0
+    delta_y = arch * (np.cos(phi) - cos_max) / (1.0 - cos_max + 1e-6)
+
+    # Inverse map for y: y_dest = pad_y + y_tex + delta_y => y_tex = y_dest - pad_y - delta_y
+    v_tex = y_dest - pad_y - delta_y
+
+    warped = np.zeros((ch, cw, 4), dtype=np.float32)
+    for c in range(4):
+        warped[:, :, c] = ndi.map_coordinates(art_arr[:, :, c], [v_tex, u_tex], order=1, mode="constant", cval=0.0)
+
+    # Cylindrical diffuse light falloff: surface normal turns away towards sides
+    cyl_light = np.clip(np.cos(phi) ** 0.35, 0.72, 1.0)
+    for c in range(3):
+        warped[:, :, c] *= cyl_light
+
+    return Image.fromarray(warped.astype(np.uint8)), pad_x, pad_y
+
+
 @app.route("/api/scan-and-screen", methods=["POST"])
 def api_scan_and_screen():
     """
@@ -317,8 +365,8 @@ def api_scan_and_screen():
         product_file = request.files["product"]
         artwork_file = request.files["artwork"]
 
-        product_img = Image.open(product_file.stream).convert("RGBA")
-        artwork_img = Image.open(artwork_file.stream).convert("RGBA")
+        product_img = ImageOps.exif_transpose(Image.open(product_file.stream)).convert("RGBA")
+        artwork_img = ImageOps.exif_transpose(Image.open(artwork_file.stream)).convert("RGBA")
         scale_percent = float(request.form.get("scale", 85))
 
         model_name = request.form.get("model", "bria-rmbg")
@@ -334,18 +382,13 @@ def api_scan_and_screen():
         raw_mask = raw_mask.convert("L")
         alpha_np = np.array(raw_mask)
 
-        # Find object bounding box & center from RMBG mask
+        # Calculate object bounding dimensions from RMBG mask
         y_idx, x_idx = np.where(alpha_np > 75)
         if len(x_idx) > 100 and len(y_idx) > 100:
-            min_x, max_x = int(np.min(x_idx)), int(np.max(x_idx))
-            min_y, max_y = int(np.min(y_idx)), int(np.max(y_idx))
-            cx = (min_x + max_x) // 2
-            cy = (min_y + max_y) // 2
-            obj_w = max_x - min_x
-            obj_h = max_y - min_y
+            obj_w = int(np.max(x_idx) - np.min(x_idx))
+            obj_h = int(np.max(y_idx) - np.min(y_idx))
         else:
-            cx, cy = w // 2, h // 2
-            obj_w, obj_h = int(w * 0.8), int(h * 0.8)
+            obj_w, obj_h = int(w * 0.75), int(h * 0.75)
 
         # 2. Size artwork: Use exact draw_w / draw_h from user's live preview (prevents any auto-shrinking!)
         client_draw_w = request.form.get("draw_w")
@@ -370,46 +413,113 @@ def api_scan_and_screen():
                 draw_w = int(target_size * art_aspect)
             logger.info(f"Calculated fallback dimensions: {draw_w}x{draw_h}")
 
+        # 3. Position artwork: Use exact paste_x / paste_y from user's live preview (0-pixel shift!)
+        client_paste_x = request.form.get("paste_x")
+        client_paste_y = request.form.get("paste_y")
+        if client_paste_x is not None and client_paste_y is not None:
+            paste_x = int(float(client_paste_x))
+            paste_y = int(float(client_paste_y))
+            art_cx = paste_x + (draw_w // 2)
+            art_cy = paste_y + (draw_h // 2)
+            logger.info(f"Using exact preview paste position: ({paste_x}, {paste_y})")
+        else:
+            offset_x = int(float(request.form.get("offset_x", 0)))
+            offset_y = int(float(request.form.get("offset_y", 0)))
+            art_cx = (w // 2) + offset_x
+            art_cy = (h // 2) + offset_y
+            paste_x = art_cx - (draw_w // 2)
+            paste_y = art_cy - (draw_h // 2)
+            logger.info(f"Calculated fallback paste position: ({paste_x}, {paste_y})")
+
         # Resize artwork smoothly
         art_resized = artwork_img.resize((draw_w, draw_h), Image.Resampling.LANCZOS)
 
-        # 3. Position artwork centered on the object on transparent layer
+        # Read surface type (plate vs cylinder 3D)
+        surface_type = request.form.get("surface_type", "plate")
+        raw_curv = request.form.get("curvature", "auto")
+        try:
+            curvature_percent = float(raw_curv)
+        except (ValueError, TypeError):
+            curvature_percent = None
+
+        # Position artwork at exact (paste_x, paste_y) on transparent layer
         art_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        paste_x = cx - (draw_w // 2)
-        paste_y = cy - (draw_h // 2)
-        art_layer.paste(art_resized, (paste_x, paste_y), mask=art_resized.split()[3])
+
+        if surface_type == "cylinder":
+            # Auto-calculate curvature based on artwork size and mug body width
+            est_cylinder_w = float(obj_w * 0.72) if obj_w > 50 else float(w * 0.58)
+            rho = np.clip(float(draw_w) / max(10.0, est_cylinder_w), 0.20, 0.95)
+            phi_max = float(np.arcsin(min(0.92, rho * 0.95)))
+            arch = float((draw_w * 0.075) * (phi_max / 0.95))
+            if curvature_percent is not None:
+                scale_factor = curvature_percent / 60.0
+                phi_max = float(np.clip(phi_max * scale_factor, 0.20, 1.25))
+                arch = float(arch * scale_factor)
+
+            logger.info(f"Auto-calculated 3D cylinder warp: phi_max={phi_max:.3f} rad ({np.degrees(phi_max):.1f}°), arch={arch:.2f}px")
+            warped_art, pad_x, pad_y = warp_cylinder_advanced(art_resized, phi_max=phi_max, arch=arch)
+            art_layer.paste(warped_art, (paste_x - pad_x, paste_y - pad_y), mask=warped_art.split()[3])
+        else:
+            art_layer.paste(art_resized, (paste_x, paste_y), mask=art_resized.split()[3])
 
         # 4. Strict boundary clipping: NEVER EXCEED OBJECT EDGES
-        # Even if artwork is scaled very large, multiply with RMBG mask so parts outside object are trimmed!
         art_alpha = art_layer.split()[3]
         clipped_alpha = ImageChops.multiply(art_alpha, raw_mask)
 
-        # 5. Realistic Shading: Preserve ceramic depth, shadows & subtle glaze gloss
+        # -------------------------------------------------------------
+        # 5. Photorealistic Ceramic Fusion Engine (Zero Shift)
+        # Eliminates "floating sticker" effect while locking position:
+        # A. Sub-pixel Edge Softening & Glaze Infiltration (No harsh cut-outs)
+        # B. Micro-Texture & Photo Grain Transfer
+        # C. Realistic Photometric Lighting (Light Factor Normalization)
+        # D. Dual-Layer Glaze Reflection (Ambient Sheen + Specular Glare)
+        # -------------------------------------------------------------
         product_gray = ImageOps.grayscale(product_img)
+        plate_gray_arr = np.array(product_gray, dtype=np.float32)
+
+        # A. Micro-Edge Feathering (Sub-pixel Glaze Infiltration)
+        soft_fused_alpha = clipped_alpha.filter(ImageFilter.GaussianBlur(radius=0.75))
+
+        # B. Micro-Texture & Photo Grain Transfer
+        micro_texture = plate_gray_arr - ndi.gaussian_filter(plate_gray_arr, sigma=2.0)
+
+        # C. Realistic Photometric Lighting
+        base_white = max(180.0, float(np.percentile(plate_gray_arr, 85)))
+        light_factor = np.clip(plate_gray_arr / base_white, 0.20, 1.05)
+
+        art_rgb = np.array(art_layer)[:, :, :3].astype(np.float32)
+        fused_rgb = art_rgb * light_factor[:, :, np.newaxis] + (micro_texture[:, :, np.newaxis] * 0.30)
+        fused_rgb = np.clip(fused_rgb, 0, 255).astype(np.uint8)
+
+        fused_layer = Image.fromarray(fused_rgb, mode="RGB").convert("RGBA")
+        fused_layer.putalpha(soft_fused_alpha)
+
         result = product_img.copy()
+        result.alpha_composite(fused_layer)
 
-        # Multiply shading: ceramic depth & contact shadows are cast onto the design
-        art_rgb = art_layer.convert("RGB")
-        shaded_rgb = ImageChops.multiply(art_rgb, product_gray.convert("RGB"))
-        # Blend to retain rich ink vibrance while absorbing ceramic lighting
-        blended_rgb = Image.blend(art_rgb, shaded_rgb, 0.70)
-        shaded_layer = blended_rgb.convert("RGBA")
-        shaded_layer.putalpha(clipped_alpha)
-        result.alpha_composite(shaded_layer)
+        # D. Dual-Layer Glaze Reflection (Ambient Sheen + Specular Glare)
+        # 1. Silky Ambient Glaze Sheen
+        glaze_mask = product_gray.point(lambda p: int(min(28, max(0, ((p - 170) / 80.0) * 28))) if p > 170 else 0)
+        glaze_alpha = ImageChops.multiply(glaze_mask, soft_fused_alpha)
+        if glaze_alpha.getextrema()[1] > 0:
+            glaze_layer = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+            glaze_layer.putalpha(glaze_alpha)
+            result.alpha_composite(glaze_layer)
 
-        # Subtle specular gloss highlight (only on high-angle glaze glare, never whitewashing ink)
-        gloss_mask = product_gray.point(lambda p: int((p - 245) * 4) if p > 245 else 0)
-        if gloss_mask.getextrema()[1] > 0:
-            gloss_layer = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-            gloss_layer.putalpha(ImageChops.multiply(gloss_mask, clipped_alpha))
-            result.alpha_composite(gloss_layer)
+        # 2. Specular Glaze Glare
+        glare_mask = product_gray.point(lambda p: int(min(65, max(0, ((p - 200) / 50.0) ** 1.8 * 65))) if p > 200 else 0)
+        glare_alpha = ImageChops.multiply(glare_mask, soft_fused_alpha)
+        if glare_alpha.getextrema()[1] > 0:
+            glaze_layer = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+            glaze_layer.putalpha(glare_alpha)
+            result.alpha_composite(glaze_layer)
 
         # 6. Return high-resolution composited PNG
         output_io = io.BytesIO()
         result.save(output_io, format="PNG", optimize=True)
         output_io.seek(0)
 
-        logger.info(f"Scan and screen completed successfully. CX={cx}, CY={cy}, Size={target_size}px")
+        logger.info(f"Scan and screen completed successfully. CX={art_cx}, CY={art_cy}, Size={target_size}px")
         return send_file(output_io, mimetype="image/png")
 
     except Exception as e:

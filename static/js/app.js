@@ -55,6 +55,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let artworkImgObj = null;
     let currentDrawW = 0;
     let currentDrawH = 0;
+    let currentOffsetX = 0;
+    let currentOffsetY = 0;
+    let currentPasteX = 0;
+    let currentPasteY = 0;
+    let currentShapeType = 'plate'; // 'plate' or 'cylinder'
+    let currentCurvature = 60; // 15 to 150%
+    let isCurvatureManual = false;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragStartOffsetX = 0;
+    let dragStartOffsetY = 0;
 
     function checkReady() {
         if (productFile && artworkFile) {
@@ -86,6 +98,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Live Preview Renderer: Draws Product and scales Artwork onto it in real time
+    function calculateAutoCurvature(drawW, cw) {
+        // Estimated cylinder body width in the product image
+        const estCylinderW = Math.max(50, cw * 0.58);
+        const rho = Math.max(0.20, Math.min(0.95, drawW / estCylinderW));
+        const basePhi = Math.asin(Math.min(0.92, rho * 0.95)); // angle from center to edge (up to ~67°)
+        
+        // Multiplier from slider (60 is 1.0x baseline)
+        const factor = isCurvatureManual ? (currentCurvature / 60.0) : 1.0;
+        const phiMax = Math.max(0.15, Math.min(1.25, basePhi * factor));
+        const arch = Math.round((drawW * 0.075) * (phiMax / 0.95));
+        const percent = Math.round((phiMax / 0.92) * 100);
+        return { phiMax, arch, percent };
+    }
+
     function renderLivePreview() {
         if (!mockupCanvas) return;
         const ctx = mockupCanvas.getContext('2d');
@@ -158,13 +184,58 @@ document.addEventListener('DOMContentLoaded', () => {
         currentDrawW = drawW;
         currentDrawH = drawH;
 
-        const cx = cw / 2;
-        const cy = ch / 2;
+        const cx = Math.round((cw / 2) + currentOffsetX);
+        const cy = Math.round((ch / 2) + currentOffsetY);
         const px = Math.round(cx - (drawW / 2));
         const py = Math.round(cy - (drawH / 2));
 
+        currentPasteX = px;
+        currentPasteY = py;
+
         ctx.save();
-        ctx.drawImage(artworkImgObj, px, py, drawW, drawH);
+        if (currentShapeType === 'cylinder') {
+            // True 3D cylindrical projection: both top and bottom curve in natural harmony
+            const autoCurv = calculateAutoCurvature(drawW, cw);
+            const phiMax = autoCurv.phiMax;
+            const sinMax = Math.sin(phiMax);
+            const cosMax = Math.cos(phiMax);
+            const arch = autoCurv.arch;
+
+            if (mkCurvatureVal) {
+                if (isCurvatureManual) {
+                    mkCurvatureVal.textContent = `${currentCurvature}% (${Math.round((phiMax * 180) / Math.PI)}°)`;
+                } else {
+                    mkCurvatureVal.textContent = `คำนวณอัตโนมัติ: ${autoCurv.percent}% ✨`;
+                }
+            }
+
+            const strips = 48;
+            const artW = artworkImgObj.naturalWidth || artworkImgObj.width;
+            const artH = artworkImgObj.naturalHeight || artworkImgObj.height;
+
+            for (let i = 0; i < strips; i++) {
+                const u0 = (i / strips) * 2 - 1;
+                const u1 = ((i + 1) / strips) * 2 - 1;
+
+                const phi0 = u0 * phiMax;
+                const phi1 = u1 * phiMax;
+
+                const x0 = cx + (Math.sin(phi0) / sinMax) * (drawW / 2);
+                const x1 = cx + (Math.sin(phi1) / sinMax) * (drawW / 2);
+                const stripW = Math.max(1, (x1 - x0) + 0.6);
+
+                const srcX = i * (artW / strips);
+                const srcW = artW / strips;
+
+                // Midpoint angle for true cosine elliptical drop
+                const midPhi = ((phi0 + phi1) / 2);
+                const dy = py + arch * ((Math.cos(midPhi) - cosMax) / (1.0 - cosMax + 1e-6));
+
+                ctx.drawImage(artworkImgObj, srcX, 0, srcW, artH, x0, dy, stripW, drawH);
+            }
+        } else {
+            ctx.drawImage(artworkImgObj, px, py, drawW, drawH);
+        }
         ctx.restore();
 
         mkCanvasDimensions.innerHTML = `<i class="fa-solid fa-up-right-and-down-left-from-center"></i> ${cw} x ${ch} px`;
@@ -183,6 +254,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const img = new Image();
             img.onload = () => {
                 productImgObj = img;
+                // Auto-detect if product is likely a mug/cup (taller than wide)
+                const ratio = (img.naturalHeight || img.height) / Math.max(1, (img.naturalWidth || img.width));
+                if (ratio > 1.02 && currentShapeType === 'plate') {
+                    setShapeType('cylinder');
+                }
                 renderLivePreview();
                 checkReady();
             };
@@ -231,6 +307,138 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ========================================================
+    // SHAPE TYPE SELECTOR (PLATE VS CYLINDRICAL MUG 3D)
+    // ========================================================
+    const shapeBtns = document.querySelectorAll('.mockup-shape-btn');
+    const curvatureControlGroup = document.getElementById('curvatureControlGroup');
+    const mkCurvature = document.getElementById('mkCurvature');
+    const mkCurvatureVal = document.getElementById('mkCurvatureVal');
+
+    function setShapeType(shape) {
+        currentShapeType = shape;
+        shapeBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.shape === shape);
+        });
+        if (curvatureControlGroup) {
+            curvatureControlGroup.style.display = (shape === 'cylinder') ? 'block' : 'none';
+        }
+        if (productImgObj && artworkImgObj) {
+            renderLivePreview();
+        }
+    }
+
+    shapeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            setShapeType(btn.dataset.shape);
+        });
+    });
+
+    const btnResetCurvature = document.getElementById('btnResetCurvature');
+
+    if (mkCurvature) {
+        mkCurvature.addEventListener('input', (e) => {
+            isCurvatureManual = true;
+            currentCurvature = parseInt(e.target.value, 10) || 60;
+            if (mkCurvatureVal) mkCurvatureVal.textContent = `${currentCurvature}%`;
+            if (productImgObj && artworkImgObj) {
+                renderLivePreview();
+            }
+        });
+    }
+
+    if (btnResetCurvature) {
+        btnResetCurvature.addEventListener('click', () => {
+            isCurvatureManual = false;
+            currentCurvature = 60;
+            if (mkCurvature) mkCurvature.value = 60;
+            if (productImgObj && artworkImgObj) {
+                renderLivePreview();
+            }
+            showToast('รีเซ็ตความโค้งกลับสู่ค่าคำนวณอัตโนมัติแล้ว', 'info');
+        });
+    }
+
+    // ========================================================
+    // INTERACTIVE CANVAS DRAGGING & REPOSITIONING
+    // ========================================================
+    function getCanvasPos(e) {
+        const rect = mockupCanvas.getBoundingClientRect();
+        const scaleX = mockupCanvas.width / Math.max(1, rect.width);
+        const scaleY = mockupCanvas.height / Math.max(1, rect.height);
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    }
+
+    function onPointerDown(e) {
+        if (!productImgObj || !artworkImgObj) return;
+        // If final AI result is currently shown, touching the canvas returns to live preview so user can adjust
+        if (mockupResultImg.style.display !== 'none') {
+            mockupResultImg.style.display = 'none';
+            mockupCanvas.style.display = 'block';
+            renderLivePreview();
+        }
+
+        const pos = getCanvasPos(e);
+        isDragging = true;
+        dragStartX = pos.x;
+        dragStartY = pos.y;
+        dragStartOffsetX = currentOffsetX;
+        dragStartOffsetY = currentOffsetY;
+        mockupCanvas.classList.add('dragging');
+        if (e.type === 'touchstart') e.preventDefault();
+    }
+
+    function onPointerMove(e) {
+        if (!isDragging || !productImgObj || !artworkImgObj) return;
+        const pos = getCanvasPos(e);
+        const dx = pos.x - dragStartX;
+        const dy = pos.y - dragStartY;
+
+        currentOffsetX = Math.round(dragStartOffsetX + dx);
+        currentOffsetY = Math.round(dragStartOffsetY + dy);
+
+        renderLivePreview();
+        if (e.type === 'touchmove') e.preventDefault();
+    }
+
+    function onPointerUp() {
+        if (isDragging) {
+            isDragging = false;
+            mockupCanvas.classList.remove('dragging');
+        }
+    }
+
+    mockupCanvas.addEventListener('mousedown', onPointerDown);
+    mockupResultImg.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerUp);
+
+    mockupCanvas.addEventListener('touchstart', onPointerDown, { passive: false });
+    mockupResultImg.addEventListener('touchstart', onPointerDown, { passive: false });
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+
+    function resetToCenter() {
+        currentOffsetX = 0;
+        currentOffsetY = 0;
+        if (mockupResultImg.style.display !== 'none') {
+            mockupResultImg.style.display = 'none';
+            mockupCanvas.style.display = 'block';
+        }
+        renderLivePreview();
+        showToast('จัดตำแหน่งลายกลับสู่กึ่งกลางแล้ว', 'info');
+    }
+
+    const mkResetPosBtn = document.getElementById('mkResetPosBtn');
+    const mkResetPosToolbarBtn = document.getElementById('mkResetPosToolbarBtn');
+    if (mkResetPosBtn) mkResetPosBtn.addEventListener('click', resetToCenter);
+    if (mkResetPosToolbarBtn) mkResetPosToolbarBtn.addEventListener('click', resetToCenter);
+
     // Core Action: Scan & Screen with strict boundary clipping
     btnAiScanAndScreen.addEventListener('click', async () => {
         if (!productFile || !artworkFile) {
@@ -249,6 +457,12 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('draw_w', currentDrawW);
             formData.append('draw_h', currentDrawH);
         }
+        formData.append('paste_x', currentPasteX);
+        formData.append('paste_y', currentPasteY);
+        formData.append('offset_x', Math.round(currentOffsetX));
+        formData.append('offset_y', Math.round(currentOffsetY));
+        formData.append('surface_type', currentShapeType);
+        formData.append('curvature', isCurvatureManual ? currentCurvature : 'auto');
 
         try {
             const res = await fetch('/api/scan-and-screen', {
